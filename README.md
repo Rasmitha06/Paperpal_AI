@@ -1,169 +1,139 @@
 # Paperpal AI
 
-## Overview
+Paperpal AI is a full-stack PDF question-answering app that lets users upload PDFs, ask document-based questions, and generate summaries with page-level sources.
 
-Paperpal AI is a ChatPDF-style application that turns PDFs into a searchable knowledge base. Users upload documents, ask questions with citations, and generate full-document summaries. The system uses retrieval-augmented generation (RAG) with vector search, plus OCR, table extraction, and vision for charts and figures.
+The app uses a RAG pipeline with vector search, OCR, table extraction, and vision-based chart processing to make PDFs easier to search and understand.
 
-The project includes a FastAPI backend, a React + Vite frontend, user authentication with guest trial limits, and per-user document and activity history.
+---
 
-## Problem Statement
+## What this project does
 
-Reading long PDFs (reports, resumes, resource sheets, research papers) is slow when you only need specific facts or a high-level overview. Generic chat tools are not grounded in your file and may hallucinate. Paperpal AI addresses this by:
+Paperpal AI helps users work with long or scanned PDFs without manually reading every page. Users can upload a document, ask questions, view grounded answers with sources, and generate a brief or detailed summary.
 
-- Indexing each uploaded PDF into a vector database scoped by document
-- Answering questions only from retrieved excerpts, with page-level context
-- Summarizing every page of a document (brief + full summary), not just a few similar chunks
-- Handling scanned pages (OCR), tables, and chart-heavy pages (vision) during ingest
+The system is designed to reduce unsupported answers by retrieving relevant PDF chunks before generating a response.
 
-## Tech Stack
-
-| Layer | Technologies |
-|--------|----------------|
-| **Frontend** | React 18, Vite, Marked (Markdown rendering) |
-| **Backend** | FastAPI, Uvicorn, Pydantic Settings |
-| **RAG / LLM** | LangChain (LCEL), OpenAI (`gpt-4o-mini` / `gpt-4`), OpenAI Embeddings |
-| **Vector DB** | Pinecone (`langchain-pinecone`) |
-| **PDF processing** | PyMuPDF (fitz), pdfplumber, Tesseract OCR (optional), GPT-4o-mini vision |
-| **Auth & storage** | JWT, SQLite (`documind.db`), bcrypt/passlib |
-| **Dev** | Python 3.9+, Node.js 18+ |
-
-## Architecture / Workflow
-
-```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  React UI   │────▶│  FastAPI :8000   │────▶│    Pinecone     │
-│  :5173      │     │  /api/*          │     │  (embeddings)   │
-└─────────────┘     └────────┬─────────┘     └─────────────────┘
-                             │
-                    ┌────────┴────────┐
-                    ▼                 ▼
-              ┌──────────┐      ┌──────────────┐
-              │ SQLite   │      │ OpenAI API   │
-              │ users,   │      │ chat + embed │
-              │ history  │      │ + vision     │
-              └──────────┘      └──────────────┘
-```
-
-### Upload pipeline
-
-1. PDF saved under `data/uploads/`
-2. Per-page text: native extract → OCR if sparse → tables (pdfplumber) → vision for figures/charts
-3. LangChain `RecursiveCharacterTextSplitter` → chunks with metadata (`doc_id`, `page`, `chunk_id`)
-4. Embeddings → upsert to Pinecone; registry entry in `data/doc_registry.json`
-5. Signed-in users: document linked to `owner_user_id`; upload recorded in history
-
-### Query pipeline (Chat)
-
-1. Embed question → similarity search in Pinecone filtered by `doc_id`
-2. Filter chunks by similarity threshold; boost retrieval for chart-related questions
-3. LangChain QA chain → Markdown answer with citations
-4. Optional relevancy evaluation score
-
-### Summary pipeline
-
-1. Read **every page** from the stored PDF (not vector search only)
-2. **≤28 pages**: single `gpt-4o-mini` pass → Brief + Full summary
-3. **Larger PDFs**: parallel batch summaries (10 pages/batch) → one merge call
-4. Dedicated endpoint: `POST /api/summary`
+---
 
 ## Features
 
-- **PDF upload** with drag-and-drop; OCR, tables, and vision on ingest
-- **Chat** with grounded answers, retrieved chunk previews, and relevancy score
-- **Full-document summary** (Brief Summary + page-by-page Full Summary)
-- **User auth** (sign up / sign in) and **guest trial** (2 operations/day)
-- **Documents list** and **activity history** (search, chat, uploads) for signed-in users only
-- **Chart-aware Q&A** via `CHART_DATA` chunks from vision at upload time
+- Upload PDFs and index them into a document-specific vector database
+- Ask questions and receive answers grounded in the uploaded PDF
+- Show page-level sources used for each answer
+- Generate brief and detailed full-document summaries
+- Extract native PDF text, tables, scanned text, and chart/figure descriptions
+- Support user accounts with saved documents and activity history
+- Provide guest trial usage with daily operation limits
 
-## Results
+---
 
-- End-to-end RAG: upload → index → query with citations
-- Multi-page PDFs (e.g. 23-page resource sheets, 125+ chunks) indexed and queryable
-- Summaries typically complete in ~15–40 seconds for medium-length PDFs (one-shot path)
-- Guest-friendly demo with usage limits; unlimited use when authenticated
+## Tech stack
+
+| Area | Technologies |
+|------|--------------|
+| Frontend | React 18, Vite, Marked |
+| Backend | FastAPI, Uvicorn, Pydantic Settings |
+| RAG / LLM | LangChain, OpenAI GPT models, OpenAI Embeddings |
+| Vector database | Pinecone, langchain-pinecone |
+| PDF processing | PyMuPDF, pdfplumber, Tesseract OCR, GPT-4o-mini Vision |
+| Auth and storage | JWT, SQLite, bcrypt/passlib |
+| Development | Python 3.9+, Node.js 18+ |
+
+---
+
+## How PDF processing works
+
+### Upload flow
+
+- Saves uploaded PDFs under `data/uploads/`
+- Extracts native PDF text using PyMuPDF
+- Uses OCR fallback for scanned or low-text pages
+- Extracts tables with pdfplumber
+- Uses vision processing for chart-heavy or figure-heavy pages
+- Splits extracted content into page-aware chunks with metadata
+- Stores embeddings in Pinecone with `doc_id`, `page`, and `chunk_id`
+
+### Question-answering flow
+
+- Embeds the user question
+- Searches Pinecone using document-specific filtering
+- Retrieves the most relevant PDF chunks
+- Applies similarity filtering before answer generation
+- Uses a LangChain QA chain to generate a Markdown response
+- Returns the answer with page-level sources
+
+### Summary flow
+
+- Reads every page from the stored PDF
+- Generates a brief summary and a detailed page-level summary
+- Uses batched summarization for larger documents
+- Exposes summary generation through `POST /api/summary`
+
+---
+
+## What I built
+
+- Built an end-to-end PDF RAG workflow for upload, indexing, question answering, and summarization
+- Implemented document-scoped vector search using Pinecone and OpenAI embeddings
+- Added OCR, table extraction, and vision-generated chart descriptions during ingestion
+- Created FastAPI routes for upload, query, summary, authentication, document history, and activity history
+- Built a React + Vite frontend with upload, chat, summary, authentication, and history views
+- Added guest usage limits and signed-in user access for saved documents and unlimited usage
+
+---
 
 ## Screenshots
 
-_Add screenshots of your running app here._
+### Upload and guest trial 
 
-| Screen | Description |
-|--------|-------------|
-| Home / demo | Hero, Chat / Summary tabs, upload panel |
-| Chat | Question, answer with citations and chunk scores |
-| Summary | Brief Summary + Full Summary (page headings) |
-| Sidebar | Documents list and history (signed in) |
+![Upload](screenshots/01-home-upload.png)
 
-Example paths after capture:
+### Chat with sources 
 
-```markdown
-![Chat](docs/screenshots/chat.png)
-![Summary](docs/screenshots/summary.png)
-```
+![Chat](screenshots/04-chat-citations.gif)
 
-## Folder Structure
 
-```
+### Summary result 
+
+![Dashboard](screenshots/05-summary-result.png) 
+---
+
+## Project structure
+
+```text
 pdf-rag-assistant/
-├── backend/
-│   ├── main.py                 # FastAPI app entry
-│   ├── config.py               # Settings, registry, env
-│   ├── database.py             # SQLite schema
-│   ├── deps.py                 # Auth, guest limits
-│   ├── models/                 # Pydantic request/response models
-│   ├── routes/
-│   │   ├── auth.py
-│   │   ├── upload.py
-│   │   ├── query.py
-│   │   ├── summary.py
-│   │   ├── list_documents.py
-│   │   └── history.py
-│   └── services/
-│       ├── pdf_processor.py
-│       ├── ocr_service.py
-│       ├── vision_service.py
-│       ├── langchain_stack.py  # Pinecone, retrieval, QA chains
-│       ├── document_summary_service.py
-│       ├── llm_service.py
-│       ├── vector_store.py
-│       ├── history_service.py
-│       └── auth_service.py
-├── frontend/                   # React + Vite frontend
-│   ├── src/
-│   │   ├── App.jsx
-│   │   ├── App.css
-│   │   ├── api.js
-│   │   └── AuthModal.jsx
-│   └── vite.config.ts          # Proxies /api → :8000
-├── scripts/
-│   ├── verify_capabilities.py
-│   └── verify_pinecone.py
-├── data/                       # gitignored: uploads, registry, db
-├── requirements.txt
-├── .env.example
+├── backend/              # FastAPI app, API routes, auth, RAG, PDF processing
+├── frontend/             # React + Vite frontend
+├── data/                 # Local uploads, registry, and SQLite DB (gitignored)
+├── requirements.txt      # Python dependencies
+├── .env.example          # Example environment variables
 └── README.md
 ```
+---
 
-## Installation
+## Running locally
 
 ### Prerequisites
 
 - Python 3.9+
 - Node.js 18+
-- [Pinecone](https://www.pinecone.io/) account and API key
-- [OpenAI](https://platform.openai.com/) API key
-- Optional: `brew install tesseract` for scanned PDFs
+- Pinecone account and API key
+- OpenAI API key
+- Optional: Tesseract OCR for scanned PDFs
 
 ### 1. Clone and configure
 
 ```bash
+git clone <your-repo-url>
 cd pdf-rag-assistant
+
 python3 -m venv .venv
 source .venv/bin/activate
+
 pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` (minimum):
+Update `.env` with your keys:
 
 ```env
 OPENAI_API_KEY=sk-...
@@ -171,28 +141,18 @@ PINECONE_API_KEY=pcsk-...
 PINECONE_INDEX_NAME=your-index-name
 JWT_SECRET=your-long-random-secret
 
-# If index already exists in Pinecone console (skips control-plane check)
 PINECONE_SKIP_INDEX_BOOTSTRAP=true
-
-# Fast summaries
 SUMMARY_MODEL=gpt-4o-mini
 ```
 
-### 2. Run backend
+### 2. Run the backend
 
 ```bash
 uvicorn backend.main:app --reload --port 8000
 ```
+---
 
-If port 8000 is in use:
-
-```bash
-lsof -ti :8000 | xargs kill
-```
-
-Health check: [http://127.0.0.1:8000/api/health](http://127.0.0.1:8000/api/health)
-
-### 3. Run frontend
+### 3. Run the frontend
 
 ```bash
 cd frontend
@@ -200,35 +160,36 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173)
+Open the app:
 
-### 4. Verify (optional)
-
-```bash
-python scripts/verify_capabilities.py --doc-id "your-file.pdf"
-python scripts/verify_pinecone.py
+```text
+http://localhost:5173
 ```
 
-### API reference
+---
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/upload` | POST | Upload PDF → index in Pinecone |
-| `/api/query` | POST | Ask a question (`doc_id`, `question`) |
-| `/api/summary` | POST | Full-document summary (`doc_id`) |
-| `/api/list_documents` | GET | List user's PDFs (auth required) |
-| `/api/history` | GET | Activity history (auth required) |
-| `/api/auth/signup` | POST | Create account |
-| `/api/auth/signin` | POST | Sign in |
-| `/api/health` | GET | Health check |
 
-## Future Improvements
 
-- Summary caching per `doc_id` to avoid re-processing on repeat requests
-- Streaming responses for chat and summary in the UI
-- PDF highlight / jump-to-page from citations
-- Admin dashboard for usage and index stats
-- Support for more embedding models and local LLM providers
-- Batch upload and folder-based document collections
-- Export summary and chat transcripts (PDF / Markdown)
-- Stronger chart Q&A with dedicated figure index browsing
+## Environment variables
+
+Create a `.env` file using `.env.example`.
+
+```env
+OPENAI_API_KEY=
+PINECONE_API_KEY=
+PINECONE_INDEX_NAME=
+JWT_SECRET=
+PINECONE_SKIP_INDEX_BOOTSTRAP=true
+SUMMARY_MODEL=gpt-4o-mini
+```
+
+Do not commit your real `.env` file.
+
+---
+
+## Next steps
+
+- Add summary caching per `doc_id`
+- Stream chat and summary responses in the UI
+- Add PDF highlight and jump-to-page support from sources
+- Export summaries and chat transcripts as PDF or Markdown
